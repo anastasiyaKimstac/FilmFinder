@@ -125,11 +125,16 @@
   <ItemGroup>
     <ClInclude Include="FilmFinder.h" />
     <ClInclude Include="framework.h" />
+    <ClInclude Include="MainWindow.h" />
     <ClInclude Include="Resource.h" />
+    <ClInclude Include="SearchWindow.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="DataBaseTest.cpp" />
     <ClCompile Include="FilmFinder.cpp" />
+    <ClCompile Include="SearchWindow.cpp" />
+    <ClCompile Include="MainWindow.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="FilmFinder.rc" />

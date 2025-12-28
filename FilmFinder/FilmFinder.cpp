@@ -3,16 +3,20 @@
 
 #include "framework.h"
 #include "FilmFinder.h"
+#include "MainWindow.h"
 #include <vector>
 #include <string>
+#include "SearchWindow.h"
 #include <fstream>
 #include <commctrl.h>
+
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "msimg32.lib")
 
 #define MAX_LOADSTRING 100
-
+Database g_database;
+bool g_dbConnected = false;
 // Глобальные переменные:
 HINSTANCE hInst;                                // текущий экземпляр
 WCHAR szTitle[MAX_LOADSTRING];                  // Текст строки заголовка
@@ -46,9 +50,6 @@ const COLORREF BG_COLOR = RGB(240, 245, 255); // Светло-голубой ф�
 const COLORREF HEADER_COLOR = RGB(70, 130, 180); // Steel blue для заголовка
 const COLORREF BUTTON_COLOR = RGB(100, 149, 237); // Cornflower blue
 
-// Файл для сохранения пользователей
-const wchar_t* USER_DATA_FILE = L"users.dat";
-
 // Глобальные шрифты для всего приложения
 static HFONT hTitleFont = NULL;
 static HFONT hLargeFont = NULL;
@@ -60,8 +61,6 @@ LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
 // Функции для работы с авторизацией
-void LoadUsers();
-void SaveUsers();
 void ShowAuthScreen(HWND hWnd);
 void ShowRegistrationScreen(HWND hWnd);
 void ShowMainScreen(HWND hWnd);
@@ -71,7 +70,23 @@ bool RegisterUser(const std::wstring& email, const std::wstring& password);
 // Функции для красивого оформления
 void DrawGradientBackground(HDC hdc, RECT rect, COLORREF topColor, COLORREF bottomColor);
 HFONT CreateCustomFont(int height, int weight = FW_NORMAL, const wchar_t* faceName = L"Arial");
-void ApplyLargeFontToChildren(HWND hWnd);
+
+bool CheckDatabaseConnection() {
+    g_dbConnected = g_database.Connect();
+    if (!g_dbConnected) {
+        MessageBox(NULL,
+            L"ВНИМАНИЕ: Не удалось подключиться к базе данных FilmDatabase\n\n"
+            L"Приложение будет работать в демо-режиме.\n"
+            L"Для полноценной работы:\n"
+            L"1. Убедитесь, что SQL Server Express установлен и запущен\n"
+            L"2. База данных FilmDatabase создана\n"
+            L"3. Разрешить доступ для Windows-аутентификации\n\n"
+            L"Для входа используйте: Email: 1, Пароль: 1",
+            L"База данных недоступна",
+            MB_OK | MB_ICONWARNING);
+    }
+    return g_dbConnected;
+}
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     _In_opt_ HINSTANCE hPrevInstance,
@@ -81,18 +96,20 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
 
-    // Инициализация common controls для современных элементов
+    // Инициализация common controls
     INITCOMMONCONTROLSEX icex;
     icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
     icex.dwICC = ICC_STANDARD_CLASSES | ICC_BAR_CLASSES;
     InitCommonControlsEx(&icex);
 
-    // Загружаем пользователей из файла
-    LoadUsers();
+    // Проверка подключения к БД
+    CheckDatabaseConnection();
 
     // Инициализация глобальных строк
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
     LoadStringW(hInstance, IDC_FILMFINDER, szWindowClass, MAX_LOADSTRING);
+
+    // Регистрируем класс окна авторизации
     MyRegisterClass(hInstance);
 
     // Выполнить инициализацию приложения:
@@ -115,9 +132,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
     }
 
-    // Освобождаем шрифты при выходе
+    // Освобождаем ресурсы при выходе
     if (hTitleFont) DeleteObject(hTitleFont);
     if (hLargeFont) DeleteObject(hLargeFont);
+
+    // Отключаемся от базы данных
+    g_database.Disconnect();
 
     return (int)msg.wParam;
 }
@@ -192,7 +212,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //
 //  ФУНКЦИЯ: WndProc(HWND, UINT, WPARAM, LPARAM)
 //
-//  ЦЕЛЬ: Обрабатывает сообщения в главном окне.
+//  ЦЕЛЬ: Обрабатывает сообщения в главном окна.
 //
 //  WM_COMMAND  - обработать меню приложения
 //  WM_PAINT    - Отрисовка главного окна
@@ -201,12 +221,30 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    static std::wstring tempEmail, tempPassword; // Временные переменные для данных регистрации
-
     switch (message)
     {
     case WM_CREATE:
     {
+        // ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ
+        Database db;
+        if (!db.Connect()) {
+            MessageBox(hWnd,
+                L"Не удалось подключиться к базе данных FilmDatabase\n"
+                L"Проверьте:\n"
+                L"1. Запущен ли SQL Server Express\n"
+                L"2. Существует ли база данных FilmDatabase\n"
+                L"3. Включена ли аутентификация Windows\n"
+                L"Для теста используйте '1' в оба поля",
+                L"Ошибка подключения",
+                MB_OK | MB_ICONWARNING);
+        }
+        else {
+            MessageBox(hWnd,
+                L"Подключение к базе данных успешно!",
+                L"Успех",
+                MB_OK | MB_ICONINFORMATION);
+            db.Disconnect(); // Отключаемся, так как соединение будет создаваться в SearchWindow
+        }
         // Показываем экран авторизации при создании окна
         ShowAuthScreen(hWnd);
     }
@@ -255,60 +293,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             GetDlgItemText(hWnd, IDC_EDIT_EMAIL, email, 100);
             GetDlgItemText(hWnd, IDC_EDIT_PASSWORD, password, 100);
 
-            if (LoginUser(email, password)) {
-                currentUser = email;
+            // УПРОЩЕННАЯ АВТОРИЗАЦИЯ - достаточно ввести "1"
+            if (wcscmp(email, L"1") == 0 && wcscmp(password, L"1") == 0) {
+                currentUser = L"Администратор";
                 isLoggedIn = true;
-                ShowMainScreen(hWnd);
-                SetWindowText(hWnd, (L"FilmFinder - " + currentUser).c_str());
+                ShowWindow(hWnd, SW_HIDE); // Скрываем окно авторизации
+                CreateMainWindow(hInst, currentUser); // Создаем главное окно (из MainWindow.cpp)
             }
             else {
-                MessageBox(hWnd, L"Неверный email или пароль!", L"Ошибка", MB_OK | MB_ICONERROR);
+                MessageBox(hWnd, L"Неверный email или пароль! Введите '1' в оба поля для входа.", L"Ошибка", MB_OK | MB_ICONERROR);
             }
         }
         break;
 
         case IDC_BUTTON_REGISTER:
         {
-            // Переходим на экран регистрации
-            ShowRegistrationScreen(hWnd);
+            // Просто сообщаем, что регистрация не требуется
+            MessageBox(hWnd, L"Регистрация не требуется. Для входа введите '1' в оба поля.", L"Информация", MB_OK | MB_ICONINFORMATION);
         }
         break;
 
         case IDC_BUTTON_CONFIRM_REGISTER:
         {
-            // Получаем данные из полей регистрации
-            wchar_t email[100], password[100], confirmPassword[100];
-            GetDlgItemText(hWnd, IDC_EDIT_EMAIL, email, 100);
-            GetDlgItemText(hWnd, IDC_EDIT_PASSWORD, password, 100);
-            GetDlgItemText(hWnd, IDC_EDIT_CONFIRM_PASSWORD, confirmPassword, 100);
-
-            // Проверяем совпадение паролей
-            if (wcscmp(password, confirmPassword) != 0) {
-                MessageBox(hWnd, L"Пароли не совпадают!", L"Ошибка", MB_OK | MB_ICONERROR);
-                break;
-            }
-
-            if (RegisterUser(email, password)) {
-                // Сохраняем данные для автозаполнения
-                tempEmail = email;
-                tempPassword = password;
-
-                MessageBox(hWnd, L"Регистрация успешна! Теперь вы можете войти.", L"Успех", MB_OK | MB_ICONINFORMATION);
-
-                // Возвращаемся на экран авторизации с заполненными данными
-                ShowAuthScreen(hWnd);
-
-                // Автоматически заполняем поля
-                if (!tempEmail.empty()) {
-                    SetDlgItemText(hWnd, IDC_EDIT_EMAIL, tempEmail.c_str());
-                }
-                if (!tempPassword.empty()) {
-                    SetDlgItemText(hWnd, IDC_EDIT_PASSWORD, tempPassword.c_str());
-                }
-            }
-            else {
-                MessageBox(hWnd, L"Пользователь с таким email уже существует!", L"Ошибка", MB_OK | MB_ICONERROR);
-            }
+            // Ничего не делаем - регистрация отключена
         }
         break;
 
@@ -363,44 +370,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         BitBlt(hdcMem, 0, 0, clientRect.right, clientRect.bottom, hdc, 0, 0, SRCCOPY);
 
         if (!isLoggedIn) {
-            if (!isRegistrationScreen) {
-                // Рисуем красивый заголовок "Авторизация"
-                RECT titleRect = { 0, 50, clientRect.right, 150 };
-                HFONT hOldFont = (HFONT)SelectObject(hdcMem, hTitleFont);
-                SetTextColor(hdcMem, HEADER_COLOR);
-                SetBkMode(hdcMem, TRANSPARENT);
+            // Рисуем красивый заголовок "Авторизация"
+            RECT titleRect = { 0, 50, clientRect.right, 150 };
+            HFONT hOldFont = (HFONT)SelectObject(hdcMem, hTitleFont);
+            SetTextColor(hdcMem, HEADER_COLOR);
+            SetBkMode(hdcMem, TRANSPARENT);
 
-                DrawText(hdcMem, L"АВТОРИЗАЦИЯ", -1, &titleRect, DT_CENTER | DT_SINGLELINE);
+            DrawText(hdcMem, L"АВТОРИЗАЦИЯ", -1, &titleRect, DT_CENTER | DT_SINGLELINE);
 
-                // Рисуем декоративную линию под заголовком
-                HPEN hLinePen = CreatePen(PS_SOLID, 3, HEADER_COLOR);
-                HPEN hOldPen = (HPEN)SelectObject(hdcMem, hLinePen);
-                MoveToEx(hdcMem, clientRect.right / 4, 130, NULL);
-                LineTo(hdcMem, 3 * clientRect.right / 4, 130);
-                SelectObject(hdcMem, hOldPen);
-                DeleteObject(hLinePen);
+            // Рисуем декоративную линию под заголовком
+            HPEN hLinePen = CreatePen(PS_SOLID, 3, HEADER_COLOR);
+            HPEN hOldPen = (HPEN)SelectObject(hdcMem, hLinePen);
+            MoveToEx(hdcMem, clientRect.right / 4, 130, NULL);
+            LineTo(hdcMem, 3 * clientRect.right / 4, 130);
+            SelectObject(hdcMem, hOldPen);
+            DeleteObject(hLinePen);
 
-                SelectObject(hdcMem, hOldFont);
-            }
-            else {
-                // Рисуем красивый заголовок "Регистрация"
-                RECT titleRect = { 0, 50, clientRect.right, 150 };
-                HFONT hOldFont = (HFONT)SelectObject(hdcMem, hTitleFont);
-                SetTextColor(hdcMem, HEADER_COLOR);
-                SetBkMode(hdcMem, TRANSPARENT);
+            SelectObject(hdcMem, hOldFont);
 
-                DrawText(hdcMem, L"РЕГИСТРАЦИЯ", -1, &titleRect, DT_CENTER | DT_SINGLELINE);
-
-                // Рисуем декоративную линию под заголовком
-                HPEN hLinePen = CreatePen(PS_SOLID, 3, HEADER_COLOR);
-                HPEN hOldPen = (HPEN)SelectObject(hdcMem, hLinePen);
-                MoveToEx(hdcMem, clientRect.right / 4, 130, NULL);
-                LineTo(hdcMem, 3 * clientRect.right / 4, 130);
-                SelectObject(hdcMem, hOldPen);
-                DeleteObject(hLinePen);
-
-                SelectObject(hdcMem, hOldFont);
-            }
+            // Рисуем подсказку
+            RECT hintRect = { 50, 500, clientRect.right - 50, 600 };
+            HFONT hOldFont2 = (HFONT)SelectObject(hdcMem, hLargeFont);
+            SetTextColor(hdcMem, RGB(100, 100, 100));
+            DrawText(hdcMem, L"Для входа введите '1' в оба поля", -1, &hintRect, DT_CENTER | DT_SINGLELINE);
+            SelectObject(hdcMem, hOldFont2);
         }
         else {
             // Рисуем приветствие для авторизованного пользователя
@@ -426,7 +419,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     break;
 
     case WM_DESTROY:
-        SaveUsers(); // Сохраняем пользователей при выходе
         PostQuitMessage(0);
         break;
 
@@ -434,15 +426,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
     return 0;
-}
-
-// Функция для применения крупного шрифта ко всем дочерним элементам
-void ApplyLargeFontToChildren(HWND hWnd)
-{
-    EnumChildWindows(hWnd, [](HWND hwnd, LPARAM lParam) -> BOOL {
-        SendMessage(hwnd, WM_SETFONT, (WPARAM)hLargeFont, TRUE);
-        return TRUE;
-        }, 0);
 }
 
 // Функция для отображения экрана авторизации
@@ -456,7 +439,6 @@ void ShowAuthScreen(HWND hWnd)
         DestroyWindow(child);
         child = GetWindow(hWnd, GW_CHILD);
     }
-
 
     // Статический текст для email
     CreateWindowW(L"STATIC", L"Email:",
@@ -476,22 +458,22 @@ void ShowAuthScreen(HWND hWnd)
     // Поле ввода пароля (с звездочками)
     CreateWindowW(L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | WS_BORDER | ES_LEFT | ES_PASSWORD,
-        80, 310, 400, 30, hWnd, (HMENU)IDC_EDIT_PASSWORD, hInst, NULL); 
+        80, 310, 400, 30, hWnd, (HMENU)IDC_EDIT_PASSWORD, hInst, NULL);
 
     // Чекбокс "Запомнить меня"
     CreateWindowW(L"BUTTON", L"Запомнить данные для входа",
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        80, 380, 300, 35, hWnd, (HMENU)IDC_CHECK_REMEMBER, hInst, NULL); 
+        80, 380, 300, 35, hWnd, (HMENU)IDC_CHECK_REMEMBER, hInst, NULL);
 
     // Кнопка "Войти"
     CreateWindowW(L"BUTTON", L"Войти",
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
         80, 440, 180, 55, hWnd, (HMENU)IDC_BUTTON_LOGIN, hInst, NULL);
 
-    // Кнопка "Зарегистрироваться"
-    CreateWindowW(L"BUTTON", L"Зарегистрироваться",
-        WS_CHILD | WS_VISIBLE,
-        280, 440, 200, 55, hWnd, (HMENU)IDC_BUTTON_REGISTER, hInst, NULL); 
+    // Убираем кнопку регистрации - она не нужна
+    // CreateWindowW(L"BUTTON", L"Зарегистрироваться",
+    //     WS_CHILD | WS_VISIBLE,
+    //     280, 440, 200, 55, hWnd, (HMENU)IDC_BUTTON_REGISTER, hInst, NULL);
 
     // Обновляем меню (убираем пункт "Выйти")
     HMENU hMenu = GetMenu(hWnd);
@@ -499,108 +481,20 @@ void ShowAuthScreen(HWND hWnd)
         RemoveMenu(hMenu, IDM_LOGOUT, MF_BYCOMMAND);
         DrawMenuBar(hWnd);
     }
-
-    // Применяем ОЧЕНЬ крупные шрифты к элементам
-    ApplyLargeFontToChildren(hWnd);
 }
 
 // Функция для отображения экрана регистрации
 void ShowRegistrationScreen(HWND hWnd)
 {
-    isRegistrationScreen = true;
-
-    // Удаляем все существующие элементы
-    HWND child = GetWindow(hWnd, GW_CHILD);
-    while (child) {
-        DestroyWindow(child);
-        child = GetWindow(hWnd, GW_CHILD);
-    }
-
-    // Создаем элементы регистрации с ОЧЕНЬ крупными размерами
-
-    // Статический текст для email
-    CreateWindowW(L"STATIC", L"Email:",
-        WS_CHILD | WS_VISIBLE,
-        80, 150, 150, 40, hWnd, NULL, hInst, NULL); // Увеличили высоту до 40
-
-    // Поле ввода email
-    CreateWindowW(L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_BORDER | ES_LEFT,
-        80, 190, 400, 30, hWnd, (HMENU)IDC_EDIT_EMAIL, hInst, NULL); // Увеличили высоту до 50
-
-    // Статический текст для пароля
-    CreateWindowW(L"STATIC", L"Пароль:",
-        WS_CHILD | WS_VISIBLE,
-        80, 260, 150, 40, hWnd, NULL, hInst, NULL); // Увеличили высоту до 40
-
-    // Поле ввода пароля (с звездочками)
-    CreateWindowW(L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_BORDER | ES_LEFT | ES_PASSWORD,
-        80, 300, 400, 30, hWnd, (HMENU)IDC_EDIT_PASSWORD, hInst, NULL); // Увеличили высоту до 50
-
-    // Статический текст для подтверждения пароля
-    CreateWindowW(L"STATIC", L"Повторите пароль:",
-        WS_CHILD | WS_VISIBLE,
-        80, 370, 200, 40, hWnd, NULL, hInst, NULL); // Увеличили высоту до 40
-
-    // Поле ввода подтверждения пароля
-    CreateWindowW(L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_BORDER | ES_LEFT | ES_PASSWORD,
-        80, 410, 400, 30, hWnd, (HMENU)IDC_EDIT_CONFIRM_PASSWORD, hInst, NULL); // Увеличили высоту до 50
-
-    // Кнопка "Зарегистрироваться"
-    CreateWindowW(L"BUTTON", L"Зарегистрироваться",
-        WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        80, 490, 200, 55, hWnd, (HMENU)IDC_BUTTON_CONFIRM_REGISTER, hInst, NULL); // Увеличили высоту до 55
-
-    // Кнопка "Назад к входу"
-    CreateWindowW(L"BUTTON", L"Назад к входу",
-        WS_CHILD | WS_VISIBLE,
-        300, 490, 180, 55, hWnd, (HMENU)IDC_BUTTON_BACK_TO_LOGIN, hInst, NULL); // Увеличили высоту до 55
-
-    // Применяем ОЧЕНЬ крупные шрифты к элементам
-    ApplyLargeFontToChildren(hWnd);
+    // Эта функция больше не используется
+    ShowAuthScreen(hWnd);
 }
 
 // Функция для отображения главного экрана (после авторизации)
 void ShowMainScreen(HWND hWnd)
 {
-    // Удаляем все существующие элементы
-    HWND child = GetWindow(hWnd, GW_CHILD);
-    while (child) {
-        DestroyWindow(child);
-        child = GetWindow(hWnd, GW_CHILD);
-    }
-
-    // Создаем элементы главного экрана с ОЧЕНЬ крупными шрифтами
-    CreateWindowW(L"STATIC", L"Добро пожаловать в FilmFinder!",
-        WS_CHILD | WS_VISIBLE,
-        80, 200, 450, 60, hWnd, NULL, hInst, NULL); // Увеличили размеры
-
-    CreateWindowW(L"STATIC", L"Здесь будет ваш поисковик фильмов...",
-        WS_CHILD | WS_VISIBLE,
-        80, 280, 450, 60, hWnd, NULL, hInst, NULL); // Увеличили размеры
-
-    // Применяем ОЧЕНЬ крупные шрифты
-    ApplyLargeFontToChildren(hWnd);
-
-    // Добавляем пункт "Выйти" в меню
-    HMENU hMenu = CreateMenu();
-    HMENU hFileMenu = CreateMenu();
-
-    AppendMenu(hFileMenu, MF_STRING, IDM_LOGOUT, L"Выйти");
-    AppendMenu(hFileMenu, MF_SEPARATOR, 0, NULL);
-    AppendMenu(hFileMenu, MF_STRING, IDM_EXIT, L"Выход");
-
-    HMENU hHelpMenu = CreateMenu();
-    AppendMenu(hHelpMenu, MF_STRING, IDM_ABOUT, L"О программе");
-
-    AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hFileMenu, L"Файл");
-    AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hHelpMenu, L"Помощь");
-
-    SetMenu(hWnd, hMenu);
+    // Эта функция не используется, так как главное окно создается отдельно
 }
-
 
 void DrawGradientBackground(HDC hdc, RECT rect, COLORREF topColor, COLORREF bottomColor)
 {
@@ -641,14 +535,9 @@ HFONT CreateCustomFont(int height, int weight, const wchar_t* faceName)
 // Функция для входа пользователя
 bool LoginUser(const std::wstring& email, const std::wstring& password)
 {
-    if (email.empty() || password.empty()) {
-        return false;
-    }
-
-    for (const auto& user : users) {
-        if (user.email == email && user.password == password) {
-            return true;
-        }
+    // УПРОЩЕННАЯ ВЕРСИЯ - только логин "1"
+    if (email == L"1" && password == L"1") {
+        return true;
     }
 
     return false;
@@ -657,67 +546,8 @@ bool LoginUser(const std::wstring& email, const std::wstring& password)
 // Функция для регистрации пользователя
 bool RegisterUser(const std::wstring& email, const std::wstring& password)
 {
-    if (email.empty() || password.empty()) {
-        return false;
-    }
-
-    // Проверяем, нет ли уже пользователя с таким email
-    for (const auto& user : users) {
-        if (user.email == email) {
-            return false;
-        }
-    }
-
-    // Добавляем нового пользователя
-    users.push_back({ email, password });
-    SaveUsers();
-    return true;
-}
-
-// Загрузка пользователей из файла
-void LoadUsers()
-{
-    std::ifstream file(USER_DATA_FILE, std::ios::binary);
-    if (!file) return;
-
-    size_t count;
-    file.read(reinterpret_cast<char*>(&count), sizeof(count));
-
-    for (size_t i = 0; i < count; ++i) {
-        User user;
-        size_t emailLen, passwordLen;
-
-        file.read(reinterpret_cast<char*>(&emailLen), sizeof(emailLen));
-        user.email.resize(emailLen);
-        file.read(reinterpret_cast<char*>(&user.email[0]), emailLen * sizeof(wchar_t));
-
-        file.read(reinterpret_cast<char*>(&passwordLen), sizeof(passwordLen));
-        user.password.resize(passwordLen);
-        file.read(reinterpret_cast<char*>(&user.password[0]), passwordLen * sizeof(wchar_t));
-
-        users.push_back(user);
-    }
-}
-
-// Сохранение пользователей в файл
-void SaveUsers()
-{
-    std::ofstream file(USER_DATA_FILE, std::ios::binary);
-    if (!file) return;
-
-    size_t count = users.size();
-    file.write(reinterpret_cast<const char*>(&count), sizeof(count));
-
-    for (const auto& user : users) {
-        size_t emailLen = user.email.length();
-        size_t passwordLen = user.password.length();
-
-        file.write(reinterpret_cast<const char*>(&emailLen), sizeof(emailLen));
-        file.write(reinterpret_cast<const char*>(&user.email[0]), emailLen * sizeof(wchar_t));
-
-        file.write(reinterpret_cast<const char*>(&passwordLen), sizeof(passwordLen));
-        file.write(reinterpret_cast<const char*>(&user.password[0]), passwordLen * sizeof(wchar_t));
-    }
+    // Регистрация отключена
+    return false;
 }
 
 // Обработчик сообщений для окна "О программе".
