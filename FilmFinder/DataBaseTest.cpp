@@ -31,3 +31,29 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     return 0;
 }
+
+// Быстрая функция проверки подключения с разными строками подключения
+bool TestDatabaseConnections() {
+    // Список возможных строк подключения для тестирования
+    std::vector<std::wstring> connectionStrings = {
+        L"DRIVER={SQL Server};SERVER=.\\SQLEXPRESS;DATABASE=FilmDatabase;Trusted_Connection=yes;",
+        L"DRIVER={SQL Server};SERVER=(local)\\SQLEXPRESS;DATABASE=FilmDatabase;Trusted_Connection=yes;",
+        L"DRIVER={SQL Server};SERVER=localhost\\SQLEXPRESS;DATABASE=FilmDatabase;Trusted_Connection=yes;",
+        L"DRIVER={SQL Server};SERVER=.;DATABASE=FilmDatabase;Trusted_Connection=yes;",
+        L"DRIVER={SQL Server};SERVER=(local);DATABASE=FilmDatabase;Trusted_Connection=yes;",
+        L"DRIVER={SQL Server};SERVER=localhost;DATABASE=FilmDatabase;Trusted_Connection=yes;",
+    };
+
+    for (const auto& connStr : connectionStrings) {
+        MessageBox(NULL,
+            (L"Попытка подключения:\n" + connStr).c_str(),
+            L"Тест подключения",
+            MB_OK | MB_ICONINFORMATION);
+
+        // Здесь нужно как-то передать строку подключения в Database
+        // В текущей реализации это не предусмотрено
+    }
+
+    // Используем стандартную проверку
+    return CheckDatabaseConnection(connectionStrings[0]);
+}

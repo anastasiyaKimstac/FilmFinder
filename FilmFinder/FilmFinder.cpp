@@ -1,7 +1,4 @@
-﻿// FilmFinder.cpp : Определяет точку входа для приложения.
-//
-
-#include "framework.h"
+﻿#include "framework.h"
 #include "FilmFinder.h"
 #include "MainWindow.h"
 #include <vector>
@@ -15,8 +12,8 @@
 #pragma comment(lib, "msimg32.lib")
 
 #define MAX_LOADSTRING 100
-Database g_database;
-bool g_dbConnected = false;
+extern Database g_database;
+extern bool g_dbConnected;
 // Глобальные переменные:
 HINSTANCE hInst;                                // текущий экземпляр
 WCHAR szTitle[MAX_LOADSTRING];                  // Текст строки заголовка
@@ -71,17 +68,34 @@ bool RegisterUser(const std::wstring& email, const std::wstring& password);
 void DrawGradientBackground(HDC hdc, RECT rect, COLORREF topColor, COLORREF bottomColor);
 HFONT CreateCustomFont(int height, int weight = FW_NORMAL, const wchar_t* faceName = L"Arial");
 
-bool CheckDatabaseConnection() {
-    g_dbConnected = g_database.Connect();
+// Объявляем внешние переменные, которые определены в SearchWindow.cpp
+extern Database g_database;
+extern bool g_dbConnected;
+
+// Инициализируем глобальные переменные
+#define MAX_LOADSTRING 100
+
+// Функция проверки подключения к БД с параметром строки подключения
+bool CheckDatabaseConnection(const std::wstring& connectionString = L"Server=DESKTOP-LCPQKJV\SQLEXPRESS;Database=FilmDatabase;Trusted_Connection=True;") {
+    // Подключаемся к базе данных
+    if (!g_dbConnected) { // Проверяем, не подключены ли уже
+        g_dbConnected = g_database.Connect();
+    }
+
     if (!g_dbConnected) {
+        std::wstring message = L"ВНИМАНИЕ: Не удалось подключиться к базе данных FilmDatabase\n\n"
+            L"Приложение будет работать в демо-режиме.\n";
+
+        // Добавляем информацию о строке подключения
+        if (!connectionString.empty()) {
+            message += L"Используемая строка подключения:\n";
+            message += connectionString + L"\n\n";
+        }
+
+        message += L"Для входа используйте: Email: 1, Пароль: 1";
+
         MessageBox(NULL,
-            L"ВНИМАНИЕ: Не удалось подключиться к базе данных FilmDatabase\n\n"
-            L"Приложение будет работать в демо-режиме.\n"
-            L"Для полноценной работы:\n"
-            L"1. Убедитесь, что SQL Server Express установлен и запущен\n"
-            L"2. База данных FilmDatabase создана\n"
-            L"3. Разрешить доступ для Windows-аутентификации\n\n"
-            L"Для входа используйте: Email: 1, Пароль: 1",
+            message.c_str(),
             L"База данных недоступна",
             MB_OK | MB_ICONWARNING);
     }

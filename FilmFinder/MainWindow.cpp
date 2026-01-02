@@ -1,4 +1,5 @@
 ﻿#include "MainWindow.h"
+#include "SearchWindow.h"  // Добавляем этот заголовок
 #include <commctrl.h>
 #include <string>
 #include "resource.h"  // Добавляем заголовок ресурсов
@@ -26,6 +27,7 @@ extern bool isLoggedIn;
 static HFONT hMainTitleFont = NULL;
 static HFONT hButtonFont = NULL;
 static HWND g_hMainWindow = NULL;
+static HBRUSH hButtonBrush = NULL;  // Добавили для управления кистью
 
 // Объявление функции About
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
@@ -33,7 +35,7 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 // Регистрация класса для главного окна
 ATOM RegisterMainWindowClass(HINSTANCE hInstance)
 {
-    WNDCLASSEXW wcex;
+    WNDCLASSEXW wcex = { 0 };  // Инициализируем нулями
 
     wcex.cbSize = sizeof(WNDCLASSEX);
     wcex.style = CS_HREDRAW | CS_VREDRAW;
@@ -99,8 +101,13 @@ void CreateMainWindow(HINSTANCE hInstance, const std::wstring& username)
         L"Segoe UI"
     );
 
+    // Создаем кисть для кнопок
+    if (!hButtonBrush) {
+        hButtonBrush = CreateSolidBrush(RGB(70, 130, 180));
+    }
+
     // Центрируем окно на экране
-    RECT rc;
+    RECT rc = { 0 };
     GetWindowRect(g_hMainWindow, &rc);
     int x = (GetSystemMetrics(SM_CXSCREEN) - (rc.right - rc.left)) / 2;
     int y = (GetSystemMetrics(SM_CYSCREEN) - (rc.bottom - rc.top)) / 2;
@@ -114,7 +121,7 @@ void CreateMainWindow(HINSTANCE hInstance, const std::wstring& username)
 void DrawMainBackground(HDC hdc, RECT rect)
 {
     // Градиентный фон от синего к голубому
-    TRIVERTEX vertex[2];
+    TRIVERTEX vertex[2] = { 0 };
     vertex[0].x = rect.left;
     vertex[0].y = rect.top;
     vertex[0].Red = 30 << 8;     // Темно-синий
@@ -129,7 +136,7 @@ void DrawMainBackground(HDC hdc, RECT rect)
     vertex[1].Blue = 255 << 8;
     vertex[1].Alpha = 0x0000;
 
-    GRADIENT_RECT gRect;
+    GRADIENT_RECT gRect = { 0 };
     gRect.UpperLeft = 0;
     gRect.LowerRight = 1;
 
@@ -255,7 +262,7 @@ LRESULT CALLBACK MainWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPar
         // Устанавливаем шрифт для кнопок
         HWND hChild = GetWindow(hWnd, GW_CHILD);
         while (hChild) {
-            wchar_t className[256];
+            wchar_t className[256] = { 0 };
             GetClassName(hChild, className, 256);
             if (wcscmp(className, L"Button") == 0) {
                 SendMessage(hChild, WM_SETFONT, (WPARAM)hButtonFont, TRUE);
@@ -282,7 +289,7 @@ LRESULT CALLBACK MainWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPar
 
             if (hSearchWnd) {
                 // Центрируем окно поиска
-                RECT rc;
+                RECT rc = { 0 };
                 GetWindowRect(hSearchWnd, &rc);
                 int x = (GetSystemMetrics(SM_CXSCREEN) - (rc.right - rc.left)) / 2;
                 int y = (GetSystemMetrics(SM_CYSCREEN) - (rc.bottom - rc.top)) / 2;
@@ -338,7 +345,7 @@ LRESULT CALLBACK MainWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPar
         HDC hdc = BeginPaint(hWnd, &ps);
 
         // Получаем размеры клиентской области
-        RECT clientRect;
+        RECT clientRect = { 0 };
         GetClientRect(hWnd, &clientRect);
 
         // Создаем буфер для двойной буферизации
@@ -407,18 +414,25 @@ LRESULT CALLBACK MainWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPar
         SetBkColor(hdc, RGB(70, 130, 180)); // Цвет кнопок
         SetTextColor(hdc, RGB(255, 255, 255)); // Белый текст
 
-        static HBRUSH hButtonBrush = NULL;
-        if (!hButtonBrush) {
-            hButtonBrush = CreateSolidBrush(RGB(70, 130, 180));
-        }
         return (LRESULT)hButtonBrush;
     }
     break;
 
     case WM_DESTROY:
         // Освобождаем шрифты
-        if (hMainTitleFont) DeleteObject(hMainTitleFont);
-        if (hButtonFont) DeleteObject(hButtonFont);
+        if (hMainTitleFont) {
+            DeleteObject(hMainTitleFont);
+            hMainTitleFont = NULL;
+        }
+        if (hButtonFont) {
+            DeleteObject(hButtonFont);
+            hButtonFont = NULL;
+        }
+        // Освобождаем кисть
+        if (hButtonBrush) {
+            DeleteObject(hButtonBrush);
+            hButtonBrush = NULL;
+        }
 
         g_hMainWindow = NULL;
         // Не закрываем приложение полностью, только это окно
